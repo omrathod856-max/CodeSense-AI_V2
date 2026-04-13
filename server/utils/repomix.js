@@ -5,6 +5,7 @@
 const { runCli } = require('repomix');
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 
 const DEFAULT_MAX_CONTEXT_CHARS = Number(process.env.REPOMIX_MAX_CONTEXT_CHARS || 120000);
 
@@ -28,12 +29,16 @@ function stripNonCodeFilesFromXml(xml) {
  * Controller to extract GitHub repo and prepare it for an LLM
  */
 const extractCodeFromRepo = async (repoUrl) => {
+  const fileId = crypto.randomBytes(8).toString('hex');
+  const tempFilename = `temp_repo_${fileId}.xml`;
+  const outputPath = path.join(process.cwd(), tempFilename);
+
   try {
     // 1. Define configuration for the extraction
     const options = {
       remote: repoUrl,          // The GitHub URL or "user/repo"
       style: 'xml',             // Best format for LLM parsing
-      output: 'temp_repo.xml',  // Temporary file name
+      output: tempFilename,     // Temporary file name
       compress: true,           // Removes fluff to save tokens
       removeComments: true,     // Keeps only logic for cleaner interview questions
       ignore: [
@@ -60,7 +65,6 @@ const extractCodeFromRepo = async (repoUrl) => {
     await runCli(['.'], process.cwd(), options);
 
     // 3. Read the generated output
-    const outputPath = path.join(process.cwd(), 'temp_repo.xml');
     const repoContext = await fs.readFile(outputPath, 'utf-8');
 
     // 4. Cleanup: Delete the temp file after reading into memory
@@ -78,6 +82,13 @@ const extractCodeFromRepo = async (repoUrl) => {
 
   } catch (error) {
     console.error("Extraction failed:", error);
+    // Cleanup if file was created before error
+    try {
+      await fs.access(outputPath);
+      await fs.unlink(outputPath);
+    } catch (cleanupError) {
+      // ignore
+    }
     throw new Error("Could not extract repository context.");
   }
 };

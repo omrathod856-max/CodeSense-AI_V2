@@ -1,10 +1,16 @@
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "https://osteoblastic-hyperfine-keira.ngrok-free.dev";
 const OLLAMA_CHAT_PATH = process.env.OLLAMA_CHAT_PATH || "/api/chat";
 const OLLAMA_FALLBACK_BASE_URL = process.env.OLLAMA_FALLBACK_BASE_URL || "http://127.0.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
-const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 300000);
-const LLM_PROMPT_MAX_CODE_CHARS = Number(process.env.LLM_PROMPT_MAX_CODE_CHARS || 80000);
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3:4b";
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 120000);
+const LLM_PROMPT_MAX_CODE_CHARS = Number(process.env.LLM_PROMPT_MAX_CODE_CHARS || 30000);
 const OLLAMA_AUTH_TOKEN = process.env.OLLAMA_AUTH_TOKEN || "";
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
+const INTERVIEW_MIN_QUESTIONS = Number(process.env.INTERVIEW_MIN_QUESTIONS || 8);
+const INTERVIEW_TARGET_QUESTIONS = Number(process.env.INTERVIEW_TARGET_QUESTIONS || 10);
+const INTERVIEW_MIN_FOLLOWUPS = Number(process.env.INTERVIEW_MIN_FOLLOWUPS || 5);
+const INTERVIEW_MAX_ATTEMPTS = Math.max(1, Number(process.env.INTERVIEW_MAX_ATTEMPTS || 2));
+const INTERVIEW_ENABLE_STRICT_RETRY = process.env.INTERVIEW_ENABLE_STRICT_RETRY === "true";
 
 const INTERVIEW_JSON_SCHEMA = {
   type: "object",
@@ -14,7 +20,7 @@ const INTERVIEW_JSON_SCHEMA = {
     summary: { type: "string", minLength: 1 },
     questions: {
       type: "array",
-      minItems: 4,
+      minItems: INTERVIEW_MIN_QUESTIONS,
       items: {
         type: "object",
         required: ["type", "question", "expected_points", "difficulty"],
@@ -49,7 +55,7 @@ const INTERVIEW_JSON_SCHEMA = {
     },
     follow_ups: {
       type: "array",
-      minItems: 3,
+      minItems: INTERVIEW_MIN_FOLLOWUPS,
       items: { type: "string", minLength: 1 },
     },
   },
@@ -77,6 +83,8 @@ function buildFallbackChatUrl() {
 function buildRequestHeaders(extraHeaders = {}) {
   const headers = {
     "Content-Type": "application/json",
+    // ngrok free tier may block non-browser requests unless this header is present.
+    "ngrok-skip-browser-warning": "true",
     ...extraHeaders,
   };
 
@@ -84,7 +92,31 @@ function buildRequestHeaders(extraHeaders = {}) {
     headers.Authorization = `Bearer ${OLLAMA_AUTH_TOKEN}`;
   }
 
+  if (OLLAMA_API_KEY && !headers.Authorization) {
+    headers.Authorization = `Bearer ${OLLAMA_API_KEY}`;
+  }
+
   return headers;
+}
+
+function parseChatContent(data) {
+  // Ollama-style response: { message: { content: "..." } }
+  if (data?.message?.content) {
+    return data.message.content;
+  }
+
+  // OpenAI-compatible response: { choices: [{ message: { content: "..." } }] }
+  const openAiContent = data?.choices?.[0]?.message?.content;
+  if (typeof openAiContent === "string" && openAiContent.trim()) {
+    return openAiContent;
+  }
+
+  // Some providers return a plain text field.
+  if (typeof data?.response === "string" && data.response.trim()) {
+    return data.response;
+  }
+
+  return "";
 }
 
 function clampPromptCode(code, maxChars = LLM_PROMPT_MAX_CODE_CHARS) {
@@ -118,9 +150,11 @@ async function runChatRequest(chatUrl, payload) {
   }
 
   const data = await res.json();
-  const content = data?.message?.content;
+  const content = parseChatContent(data);
   if (!content) {
-    throw new Error(`Invalid Ollama response at ${chatUrl}: missing message.content`);
+    throw new Error(
+      `Invalid chat response at ${chatUrl}: missing text content in message/choices/response.`
+    );
   }
 
   return content;
@@ -158,14 +192,14 @@ async function callLLM(messages, opts = {}) {
   const chatUrl = opts.baseUrl
     ? `${normalizeBaseUrl(opts.baseUrl)}${normalizePath(opts.chatPath || OLLAMA_CHAT_PATH)}`
     : buildChatUrl();
+  const isOpenAiCompatible = /\/v1\/chat\/completions$/i.test(chatUrl);
   const payload = {
     model,
     messages,
     stream,
-    ...(format ? { format } : {}),
-    options: {
-      temperature,
-    },
+    ...(isOpenAiCompatible ? { temperature } : {}),
+    ...(isOpenAiCompatible ? {} : { options: { temperature } }),
+    ...(!isOpenAiCompatible && format ? { format } : {}),
   };
 
   try {
@@ -230,13 +264,15 @@ function isValidInterviewPayload(payload) {
   }
 
   const hasSummary = typeof payload.summary === "string" && payload.summary.trim().length > 0;
-  const hasQuestions = Array.isArray(payload.questions) && payload.questions.length > 0;
+  const hasQuestions =
+    Array.isArray(payload.questions) && payload.questions.length >= INTERVIEW_MIN_QUESTIONS;
   const hasHandsOnTask =
     payload.hands_on_task &&
     typeof payload.hands_on_task === "object" &&
     typeof payload.hands_on_task.prompt === "string" &&
     payload.hands_on_task.prompt.trim().length > 0;
-  const hasFollowUps = Array.isArray(payload.follow_ups);
+  const hasFollowUps =
+    Array.isArray(payload.follow_ups) && payload.follow_ups.length >= INTERVIEW_MIN_FOLLOWUPS;
 
   return hasSummary && hasQuestions && hasHandsOnTask && hasFollowUps;
 }
@@ -251,7 +287,16 @@ function buildCodeToInterviewPrompt({ code, language, role, difficulty, focusAre
 
   return [
     "You are an expert technical interviewer.",
-    "Convert the given source code into a practical interview kit.",
+    "Convert the given source code into a practical, structured interview kit.",
+    "",
+    "Structure requirements (must follow):",
+    `- Generate exactly ${INTERVIEW_TARGET_QUESTIONS} questions.`,
+    "- Questions must be practical and code-grounded (not generic textbook prompts).",
+    "- Cover all question types: conceptual, code-reading, debugging, design.",
+    "- Use progressive difficulty: easy -> medium -> hard.",
+    "- Every question must have at least 2 specific expected points tied to this codebase.",
+    `- Generate at least ${INTERVIEW_MIN_FOLLOWUPS} follow-up questions focused on tradeoffs and edge cases.`,
+    "- The hands_on_task prompt should be implementable in 30-45 minutes.",
     "",
     "Return STRICT JSON with this schema:",
     "{",
@@ -317,46 +362,53 @@ async function generateInterviewFromCode({
     // Continue to repair and regeneration fallbacks.
   }
 
-  // One repair pass: ask model to transform previous output into strict JSON only.
-  const repairRaw = await callLLM(
-    [
-      {
-        role: "system",
-        content:
-          "Convert the user content into valid JSON only. No prose, no markdown, no code fences.",
-      },
-      { role: "user", content: raw },
-    ],
-    { model, temperature: 0, stream: false, format: INTERVIEW_JSON_SCHEMA }
-  );
+  let repairRaw;
+  let strictRaw;
 
-  try {
-    const repaired = parseInterviewJson(repairRaw);
-    if (isValidInterviewPayload(repaired)) {
-      return repaired;
+  if (INTERVIEW_MAX_ATTEMPTS >= 2) {
+    // Fast retry: ask model to transform previous output into strict JSON only.
+    repairRaw = await callLLM(
+      [
+        {
+          role: "system",
+          content:
+            "Convert the user content into valid JSON only. No prose, no markdown, no code fences.",
+        },
+        { role: "user", content: raw },
+      ],
+      { model, temperature: 0, stream: false, format: INTERVIEW_JSON_SCHEMA }
+    );
+
+    try {
+      const repaired = parseInterviewJson(repairRaw);
+      if (isValidInterviewPayload(repaired)) {
+        return repaired;
+      }
+    } catch {
+      // Continue to optional strict regeneration.
     }
-  } catch {
-    // Continue to regeneration fallback.
   }
 
-  // Final retry: regenerate from source with hard constraints to avoid empty JSON objects.
-  const strictSystemPrompt =
-    "Return exactly one JSON object with keys summary, questions, hands_on_task, follow_ups. Never return {}.";
-  const strictRaw = await callLLM(
-    [
-      { role: "system", content: strictSystemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    { model, temperature: 0, stream: false, format: INTERVIEW_JSON_SCHEMA }
-  );
+  if (INTERVIEW_ENABLE_STRICT_RETRY && INTERVIEW_MAX_ATTEMPTS >= 3) {
+    // Optional strict retry: slower, but can recover difficult outputs.
+    const strictSystemPrompt =
+      `Return exactly one JSON object with keys summary, questions, hands_on_task, follow_ups. Never return {}. Include at least ${INTERVIEW_MIN_QUESTIONS} questions and at least ${INTERVIEW_MIN_FOLLOWUPS} follow_ups.`;
+    strictRaw = await callLLM(
+      [
+        { role: "system", content: strictSystemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { model, temperature: 0, stream: false, format: INTERVIEW_JSON_SCHEMA }
+    );
 
-  try {
-    const strictParsed = parseInterviewJson(strictRaw);
-    if (isValidInterviewPayload(strictParsed)) {
-      return strictParsed;
+    try {
+      const strictParsed = parseInterviewJson(strictRaw);
+      if (isValidInterviewPayload(strictParsed)) {
+        return strictParsed;
+      }
+    } catch {
+      // Fall through to detailed error.
     }
-  } catch {
-    // Fall through to detailed error.
   }
 
   return {

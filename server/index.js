@@ -10,6 +10,7 @@ dotenv.config();
 
 //Importing routes
 const authRoutes = require('./routes/auth.routes');
+const interviewRoutes = require('./routes/interview.routes');
 
 const app = express();
 const PORT = process.env.PORT;
@@ -24,6 +25,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use('/auth', authRoutes);
+app.use('/interview', interviewRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
