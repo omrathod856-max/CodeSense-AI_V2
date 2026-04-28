@@ -134,8 +134,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📝 License
 This project is open source and available under the [MIT License](LICENSE).
 ## 👤 Author
-**Yash Thakur**
-- GitHub: omrathod856-max
+**Om Rathod**
+- GitHub: https://github.com/omrathod856-max
 ## 🙏 Acknowledgments
 - React team for the amazing framework
 - Vite for the blazing fast build tool
