@@ -1,6 +1,7 @@
 const { extractCodeFromRepo } = require("../utils/repomix");
 const { generateInterviewFromCode } = require("../utils/remotellm");
 const InterviewModel = require("../models/interviews");
+const VoiceInterviewSession = require("../models/voiceInterview");
 
 const generateInterview = async (req, res) => {
   try {
@@ -45,6 +46,7 @@ const generateInterview = async (req, res) => {
     }
 
     const savedInterview = await InterviewModel.create({
+      userId: req.user.id,
       repoUrl,
       summary: interview.summary,
       questions: interview.questions,
@@ -57,6 +59,7 @@ const generateInterview = async (req, res) => {
       success: true,
       data: {
         ...interview,
+        repoContext: code,
         _id: savedInterview._id,
         createdAt: savedInterview.createdAt,
       },
@@ -82,19 +85,48 @@ const generateInterview = async (req, res) => {
 const listRecentInterviews = async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit || 30), 100);
-    const interviews = await InterviewModel.find({})
+    console.log('Fetching recent activity for user:', req.user.id);
+    
+    // Fetch repo analyses
+    const interviews = await InterviewModel.find({ userId: req.user.id })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
+    
+    console.log(`Found ${interviews.length} repository analyses.`);
 
-    return res.status(200).json({
-      success: true,
-      data: interviews,
+    // Fetch voice interview sessions with evaluations
+    const voiceSessions = await VoiceInterviewSession.find({ 
+        userId: req.user.id,
+        status: 'ended',
+        evaluation: { $ne: null } 
+      })
+      .sort({ endedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    console.log(`Found ${voiceSessions.length} voice interview sessions with evaluations.`);
+
+    if (voiceSessions.length === 0) {
+      const anySession = await VoiceInterviewSession.findOne({ userId: req.user.id }).lean();
+      if (anySession) {
+        console.log('User has sessions, but none matched the criteria (ended + evaluation).');
+        console.log('Sample session:', JSON.stringify(anySession, null, 2));
+      } else {
+        console.log('User has NO voice interview sessions in the database.');
+      }
+    }
+
+    return res.status(200).json({ 
+      success: true, 
+      interviews,
+      voiceSessions 
     });
   } catch (error) {
+    console.error('Error in listRecentInterviews:', error);
     return res.status(500).json({
       success: false,
-      message: "Failed to load recent interviews",
+      message: "Failed to fetch interviews",
       error: error.message,
     });
   }
@@ -103,7 +135,7 @@ const listRecentInterviews = async (req, res) => {
 const getInterviewById = async (req, res) => {
   try {
     const { id } = req.params;
-    const interview = await InterviewModel.findById(id).lean();
+    const interview = await InterviewModel.findOne({ _id: id, userId: req.user.id }).lean();
 
     if (!interview) {
       return res.status(404).json({
@@ -128,7 +160,10 @@ const getInterviewById = async (req, res) => {
 const deleteInterviewById = async (req, res) => {
   try {
     const { id } = req.params;
-    await InterviewModel.findByIdAndDelete(id);
+    const result = await InterviewModel.findOneAndDelete({ _id: id, userId: req.user.id });
+    if (!result) {
+      return res.status(404).json({ success: false, message: "Interview not found or unauthorized" });
+    }
     return res.status(200).json({ success: true, message: "Interview deleted" });
   } catch (error) {
     return res.status(500).json({
@@ -139,10 +174,28 @@ const deleteInterviewById = async (req, res) => {
   }
 };
 
+const deleteVoiceInterviewById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await VoiceInterviewSession.findOneAndDelete({ _id: id, userId: req.user.id });
+    if (!result) {
+      return res.status(404).json({ success: false, message: "Session not found or unauthorized" });
+    }
+    return res.status(200).json({ success: true, message: "Voice session deleted" });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete voice session",
+      error: error.message,
+    });
+  }
+};
+
 const clearAllInterviews = async (req, res) => {
   try {
-    await InterviewModel.deleteMany({});
-    return res.status(200).json({ success: true, message: "All interviews cleared" });
+    await InterviewModel.deleteMany({ userId: req.user.id });
+    await VoiceInterviewSession.deleteMany({ userId: req.user.id });
+    return res.status(200).json({ success: true, message: "All activity cleared" });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -157,5 +210,6 @@ module.exports = {
   listRecentInterviews,
   getInterviewById,
   deleteInterviewById,
+  deleteVoiceInterviewById,
   clearAllInterviews,
 };

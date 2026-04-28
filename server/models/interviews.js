@@ -2,6 +2,7 @@ const mongoose = require('./db.connection');
 
 const interviewSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     repoUrl: { type: String, required: true, trim: true },
     summary: { type: String, required: true },
     questions: { type: Array, default: [] },

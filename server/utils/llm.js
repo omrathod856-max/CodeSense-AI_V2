@@ -134,6 +134,7 @@ function isNgrokOfflineResponse(status, body) {
 }
 
 async function runChatRequest(chatUrl, payload) {
+  console.log(`[LLM Request] URL: ${chatUrl}, Model: ${payload.model}`);
   const res = await fetchWithTimeout(chatUrl, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -141,6 +142,7 @@ async function runChatRequest(chatUrl, payload) {
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => "");
+    console.error(`[LLM Error] Status: ${res.status}, Body: ${errorText}`);
     const error = new Error(
       `Ollama API error (${res.status}) at ${chatUrl}: ${errorText || res.statusText}`
     );
@@ -152,11 +154,13 @@ async function runChatRequest(chatUrl, payload) {
   const data = await res.json();
   const content = parseChatContent(data);
   if (!content) {
+    console.error(`[LLM Error] Missing content in response:`, JSON.stringify(data));
     throw new Error(
       `Invalid chat response at ${chatUrl}: missing text content in message/choices/response.`
     );
   }
 
+  console.log(`[LLM Success] Content length: ${content.length}`);
   return content;
 }
 

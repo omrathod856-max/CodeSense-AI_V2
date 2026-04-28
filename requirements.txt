@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+websockets
+numpy
+scikit-learn
+sentence-transformers

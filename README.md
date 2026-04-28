@@ -25,41 +25,70 @@ An AI-powered interview preparation platform that helps users practice coding in
 - **Validation**: Joi
 - **CORS**: Enabled for cross-origin requests
 ## 📋 Prerequisites
+
 Before you begin, ensure you have the following installed:
-- **Node.js** (v16 or higher)
+- **Node.js** (v18 or higher recommended)
 - **npm** or **yarn**
-- **MongoDB** (local or MongoDB Atlas account)
+- **MongoDB** (local instance or MongoDB Atlas account)
+- **Ollama** (Required for local AI processing - install from [ollama.com](https://ollama.com/))
+  - After installing, download the model (default is gemma3:4b): `ollama pull gemma3:4b`
+- **Python 3.8+** (Optional, only required if you plan to use the FastAPI remote inference service)
+
 ## 💻 Installation
+
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YashThakur-997/CodeSense-AI.git
+git clone https://github.com/omrathod856-max/CodeSense-AI_V2.git
 cd CodeSense-AI
 ```
+
 ### 2. Install Server Dependencies
 ```bash
 cd server
 npm install
 ```
+
 ### 3. Install Client Dependencies
 ```bash
 cd ../client
 npm install
 ```
+
+### 4. Install Python Dependencies (Optional)
+If you plan to use the remote FastAPI inference service (`server/remote_fastapi_example.py`):
+```bash
+# Run this in the project root directory
+pip install -r requirements.txt
+```
+
 ## ⚙️ Configuration
+
 ### Server Configuration
 Create a `.env` file in the `server` directory with the following variables:
 ```env
-PORT=5000
+PORT=3000
+FRONTEND_ORIGIN=http://localhost:5173
 MONGODB_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret_key
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=gemma3:4b
 ```
+
+### Client Configuration
+Create a `.env` file in the `client` directory:
+```env
+VITE_BACKEND_URL=http://localhost:3000
+```
+
 ## 🚀 Running the Application
+
 ### Start the Server
 ```bash
 cd server
-npm start
+npm run start
 ```
-The server will run on `http://localhost:5000` (or your configured PORT)
+The server will run on `http://localhost:3000` (or your configured PORT)
+
 ### Start the Client
 ```bash
 cd client

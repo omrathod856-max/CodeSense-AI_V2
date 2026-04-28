@@ -15,6 +15,7 @@ const turnSchema = new mongoose.Schema(
 
 const voiceInterviewSchema = new mongoose.Schema(
   {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     socketId: { type: String, required: true, index: true },
     candidateName: { type: String, default: 'Candidate' },
     repoUrl: { type: String, default: '' },
@@ -22,6 +23,12 @@ const voiceInterviewSchema = new mongoose.Schema(
       type: String,
       enum: ['active', 'ended', 'abandoned', 'restarted'],
       default: 'active',
+    },
+    evaluation: {
+      score: Number,
+      feedback: String,
+      strengths: [String],
+      weaknesses: [String]
     },
     turns: { type: [turnSchema], default: [] },
     metadata: {

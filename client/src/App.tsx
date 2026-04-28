@@ -32,7 +32,7 @@ function App() {
     },
     {
       path: "/interview",
-      element: <><Interview username="Yash Thakur" imageUrl={reactsvg} /></>
+      element: <><Interview imageUrl={reactsvg} /></>
     },
     {
       path: "/analytics",

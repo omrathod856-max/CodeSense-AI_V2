@@ -2,7 +2,7 @@ import { GridBackgroundDemo } from '@/components/ui/gridbackground';
 import Navbar from './navbar';
 import { IconBrandGithub, IconArrowRight, IconLoader2, IconBriefcase, IconCode, IconHelp, IconBulb, IconHistory, IconChevronLeft, IconTrash } from '@tabler/icons-react';
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import axios from 'axios';
@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 const LAST_INTERVIEW_KEY = 'codesense_last_interview';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 interface Question {
   type: string;
@@ -28,6 +29,7 @@ interface InterviewData {
   };
   follow_ups: string[];
   repoUrl?: string;
+  repoContext?: string;
   timestamp?: number;
   createdAt?: string;
 }
@@ -44,6 +46,7 @@ function normalizeInterviewData(raw: any, repoUrl: string): InterviewData {
     },
     follow_ups: Array.isArray(raw?.follow_ups) ? raw.follow_ups : [],
     repoUrl,
+    repoContext: raw?.repoContext,
     timestamp: Date.now(),
   };
 }
@@ -96,7 +99,7 @@ function Quickstart() {
   useEffect(() => {
     const loadLatestFromDb = async () => {
       try {
-        const response = await axios.get('http://localhost:3000/interview/recent?limit=1', {
+        const response = await axios.get(`${BACKEND_URL}/interview/recent?limit=1`, {
           withCredentials: true,
         });
         const latest = response.data?.data?.[0];
@@ -125,7 +128,7 @@ function Quickstart() {
     setInterviewData(null);
 
     try {
-      const response = await axios.post('http://localhost:3000/interview/generate', { repoUrl: finalUrl }, {
+      const response = await axios.post(`${BACKEND_URL}/interview/generate`, { repoUrl: finalUrl }, {
         withCredentials: true
       });
       
@@ -153,7 +156,7 @@ function Quickstart() {
   };
 
   const clearHistory = () => {
-    axios.delete('http://localhost:3000/interview', { withCredentials: true })
+    axios.delete(`${BACKEND_URL}/interview`, { withCredentials: true })
       .finally(() => {
         localStorage.removeItem(LAST_INTERVIEW_KEY);
         setRecentInterview(null);
@@ -280,9 +283,18 @@ function Quickstart() {
                 <IconChevronLeft className="h-4 w-4 mr-1" />
                 Back to Dashboard
               </Button>
-              <Badge variant="outline" className="border-neutral-800 text-neutral-500 max-w-full truncate">
-                {interviewData.repoUrl || 'No repository URL'}
-              </Badge>
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/interview"
+                  state={{ repoContext: interviewData.repoContext, username: (location.state as any)?.username }}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Start Simulation
+                </Link>
+                <Badge variant="outline" className="border-neutral-800 text-neutral-500 max-w-full truncate">
+                  {interviewData.repoUrl || 'No repository URL'}
+                </Badge>
+              </div>
             </div>
             <div className="bg-neutral-900/50 backdrop-blur-md border border-neutral-800 p-6 rounded-2xl">
               <div className="flex items-center gap-2 mb-3">

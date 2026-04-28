@@ -1,6 +1,6 @@
 import { GridBackgroundDemo } from '@/components/ui/gridbackground';
 import { LayoutTextFlip } from '@/components/ui/layout-text-flip';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Navbar from './navbar';
 
 const quickActions = [
@@ -10,12 +10,6 @@ const quickActions = [
     href: '/quickstart',
     cta: 'Open Quick Start',
   },
-  // {
-  //   title: 'View Analytics',
-  //   description: 'Track trends, strengths, and weak spots across your interview sessions.',
-  //   href: '/analytics',
-  //   cta: 'Go to Analytics',
-  // },
   {
     title: 'Recent Activity',
     description: 'Continue where you left off by reviewing your latest generated interviews.',
@@ -31,6 +25,8 @@ const quickActions = [
 ];
 
 function HomeSection() {
+  const location = useLocation();
+  const username = location.state?.username;
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-black">
@@ -59,6 +55,7 @@ function HomeSection() {
                 <p className="mt-2 text-sm text-neutral-300">{action.description}</p>
                 <Link
                   to={action.href}
+                  state={{ username }}
                   className="mt-4 inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
                 >
                   {action.cta}
